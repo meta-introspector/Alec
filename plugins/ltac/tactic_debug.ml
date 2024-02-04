@@ -158,6 +158,50 @@ let cvt_loc loc =
     end
   | None -> None (* nothing to highlight, e.g. not in a .v file *)
 
+
+let cvt_loc2 loc =
+  let open Loc in
+  match loc with
+  | Some {fname=ToplevelInput; bp; ep} ->
+     "ToplevelInput"
+  | Some {fname=InFile {dirpath=None; file}; bp; ep} ->
+    file
+  | Some {fname=InFile {dirpath=(Some dirpath)}; bp; ep} ->
+    let open Names in
+    let dirpath = DirPath.make (List.rev_map (fun i -> Id.of_string i)
+      (String.split_on_char '.' dirpath)) in
+    let pfx = DirPath.make (List.tl (DirPath.repr dirpath)) in
+    let paths = Loadpath.find_with_logical_path pfx in
+    let basename = match DirPath.repr dirpath with
+    | hd :: tl -> (Id.to_string hd) ^ ".v"
+    | [] -> ""
+    in
+    let vs_files = List.map (fun p -> (Filename.concat (Loadpath.physical p) basename)) paths in
+    let filtered = List.filter (fun p -> Sys.file_exists p) vs_files in
+    begin match filtered with
+    | [] -> (* todo: maybe tweak this later to allow showing a popup dialog in the GUI *)
+      if not (CSet.mem dirpath !bad_dirpaths) then begin
+        bad_dirpaths := CSet.add dirpath !bad_dirpaths;
+        let msg = Pp.(fnl () ++ str "Unable to locate source code for module " ++
+                        str (Names.DirPath.to_string dirpath)) in
+        let msg = if vs_files = [] then msg else
+          (List.fold_left (fun msg f -> msg ++ fnl() ++ str f) (msg ++ str " in:") vs_files) in
+        Feedback.msg_warning msg
+      end;
+      "None"
+    | [f] -> f
+    | f :: tl ->
+      if not (CSet.mem dirpath !bad_dirpaths) then begin
+        bad_dirpaths := CSet.add dirpath !bad_dirpaths;
+        let msg = Pp.(fnl () ++ str "Multiple files found matching module " ++
+            str (Names.DirPath.to_string dirpath) ++ str ":") in
+        let msg = List.fold_left (fun msg f -> msg ++ fnl() ++ str f) msg vs_files in
+        Feedback.msg_warning msg
+      end;
+      f
+    end
+  | None -> "NONE" (* nothing to highlight, e.g. not in a .v file *)
+
  let format_frame text loc =
    try
      let open Loc in
@@ -199,6 +243,25 @@ let format_stack s =
           (":" ^ (string_of_int line_nb), floc)
         | None -> (": (no location)", floc)
     ) s
+
+let foo_stack (tac, loc) =
+  let s  = cvt_loc2 loc in
+  match tac with
+  | Some tacn ->
+     let tacn = if loc = None then
+                  tacn ^ " (no location)"
+                else
+                  format_frame tacn loc in
+     s ^ tacn
+  | None ->
+     match loc with
+     | Some { Loc.line_nb } ->
+        s ^ ":" ^ (string_of_int line_nb)
+     | None -> ": (no location)" ^ s
+
+let format_stack2 s:string =
+  String.concat "," (List.map foo_stack s)
+
 
 
 let get_vars framenum =
@@ -504,11 +567,12 @@ let print_run_ctr print =
 (* Prints the prompt *)
 let rec prompt level =
   let runnoprint = print_run_ctr false in
+  let ml = format_stack2 (get_stack ()) in
     let open Proofview.NonLogical in
     let nl = if Stdlib.(!batch) then "\n" else "" in
     Comm.print_deferred () >>
     Comm.prompt (tag "message.prompt"
-                   @@ fnl () ++ str "TcDebug (" ++ int level ++ str (") > " ^ nl)) >>
+                   @@ fnl () ++ str "TcDebug (" ++ int level ++ str (") > " ^ ml  ^ nl)) >>
     if Stdlib.(!batch) && Comm.isTerminal () then return (DebugOn (level+1)) else
     let exit = (skip:=0) >> (skipped:=0) >> raise (Sys.Break, Exninfo.null) in
     Comm.read >>= fun inst ->
