@@ -18,10 +18,15 @@ Local Open Scope Z_scope.
 (** These tactics use the complete specification of [Z.div] and
     [Z.modulo] ([Z.quot] and [Z.rem], respectively) to remove these
     functions from the goal without losing information.  The
-    [Z.euclidean_division_equations_cleanup] tactic removes needless
-    hypotheses, which makes tactics like [nia] run faster.  The tactic
-    [Z.to_euclidean_division_equations] combines the handling of both variants
-    of division/quotient and modulo/remainder. *)
+    [Z.euclidean_division_equations_find_duplicate_quotients] tactic
+    poses facts of the form [q₁ = q₂ \/ q₁ <> q₂] for quotients that
+    are likely to be the same, which allows tactics like [nia] to
+    prove more goals, including those relating [Z.div]/[Z.mod] to
+    [Z.quot]/[Z.rem].  The [Z.euclidean_division_equations_cleanup]
+    tactic removes needless hypotheses, which makes tactics like [nia]
+    run faster.  The tactic [Z.to_euclidean_division_equations]
+    combines the handling of both variants of division/quotient and
+    modulo/remainder. *)
 
 Module Z.
   Lemma mod_0_r_ext x y : y = 0 -> x mod y = x.
@@ -42,6 +47,10 @@ Module Z.
   Proof. rewrite <- (Z.opp_involutive x), Z.rem_opp_l', <- Z.opp_lt_mono, and_comm, !Z.opp_nonpos_nonneg; apply rem_bound_pos_pos. Qed.
   Lemma rem_bound_neg_neg x y : y < 0 -> x <= 0 -> y < Z.rem x y <= 0.
   Proof. rewrite <- (Z.opp_involutive x), <- (Z.opp_involutive y), Z.rem_opp_l', <- Z.opp_lt_mono, and_comm, !Z.opp_nonpos_nonneg, Z.opp_involutive; apply rem_bound_neg_pos. Qed.
+
+  (* Make the direction of [Z.divide] line up with the rest of the Euclidean equation facts *)
+  Local Lemma divide_alt x y : Z.divide x y -> exists z, y = x * z.
+  Proof. intros [z H]; exists z; subst; apply Z.mul_comm. Qed.
 
   Ltac div_mod_to_equations_generalize x y :=
     pose proof (Z.div_mod x y);
@@ -82,8 +91,11 @@ Module Z.
     | [ H : context[Z.quot ?x ?y] |- _ ] => quot_rem_to_equations_generalize x y
     | [ H : context[Z.rem ?x ?y] |- _ ] => quot_rem_to_equations_generalize x y
     end.
+  Ltac divide_to_equations_step :=
+    match goal with | [ H : Z.divide _ _ |- _ ] => apply divide_alt in H; destruct H end.
   Ltac div_mod_to_equations' := repeat div_mod_to_equations_step.
   Ltac quot_rem_to_equations' := repeat quot_rem_to_equations_step.
+  Ltac divide_to_equations' := repeat divide_to_equations_step.
   Ltac euclidean_division_equations_cleanup :=
     repeat match goal with
            | [ H : ?x = ?x -> ?Q |- _ ] => specialize (H eq_refl)
@@ -124,9 +136,91 @@ Module Z.
            | [ H : ?A -> ?x = ?y -> _, H' : ?y < ?x |- _ ] => clear H
            | [ H : 0 <= ?x < _ |- _ ] => destruct H
            end.
+  (** poses [x = y \/ x <> y] unless that is redundant or contradictory *)
+  Ltac euclidean_division_equations_pose_eq_fact x y :=
+    assert_fails constr_eq x y;
+    lazymatch goal with
+    | [ H : x = y |- _ ] => fail
+    | [ H : y = x |- _ ] => fail
+    | [ H : x = y \/ x <> y |- _ ] => fail
+    | [ H : y = x \/ y <> x |- _ ] => fail
+    | [ H : x < y |- _ ] => fail
+    | [ H : y < x |- _ ] => fail
+    | [ H : x <> y |- _ ] => fail
+    | [ H : y <> x |- _ ] => fail
+    | _ => pose proof (Z.eq_decidable x y : x = y \/ x <> y)
+    end.
+
+  Ltac euclidean_division_equations_find_duplicate_quotients_step :=
+    let pose_eq_fact x y := euclidean_division_equations_pose_eq_fact x y in
+    match goal with
+    | [ H : context[?x = ?y * ?q1], H' : context[?x = ?y * ?q2] |- _ ] => pose_eq_fact q1 q2
+    | [ H : context[?x = ?y * ?q1 + _], H' : context[?x = ?y * ?q2] |- _ ] => pose_eq_fact q1 q2
+    | [ H : context[?x = ?y * ?q1 + _], H' : context[?x = ?y * ?q2 + _] |- _ ] => pose_eq_fact q1 q2
+    | [ H : context[?y * ?q2 + _ = ?y * ?q1 + _] |- _ ] => pose_eq_fact q1 q2
+    | [ H : context[?x * ?y = ?y * ?q1 + _] |- _ ] => pose_eq_fact x q1
+    | [ H : context[?y * ?x = ?y * ?q1 + _] |- _ ] => pose_eq_fact x q1
+    end.
+  Ltac euclidean_division_equations_find_duplicate_quotients :=
+    repeat euclidean_division_equations_find_duplicate_quotients_step.
   Ltac div_mod_to_equations := div_mod_to_equations'; euclidean_division_equations_cleanup.
   Ltac quot_rem_to_equations := quot_rem_to_equations'; euclidean_division_equations_cleanup.
-  Ltac to_euclidean_division_equations := div_mod_to_equations'; quot_rem_to_equations'; euclidean_division_equations_cleanup.
+  Ltac divide_to_equations := divide_to_equations'; euclidean_division_equations_cleanup.
+  Module euclidean_division_equations_flags.
+    #[local] Set Primitive Projections.
+    Record t :=
+      { find_duplicate_quotients : bool }.
+    Ltac default_find_duplicate_quotients := constr:(true).
+    Ltac default :=
+      let find_duplicate_quotients_value := default_find_duplicate_quotients in
+      constr:({| find_duplicate_quotients := find_duplicate_quotients_value
+              |}).
+    Module Import DefaultHelpers.
+      Ltac try_unify_args x y :=
+        tryif first [ has_evar x | has_evar y ]
+        then (tryif unify x y
+               then idtac
+               else (lazymatch x with
+                     | ?f ?x
+                       => lazymatch y with
+                          | ?g ?y
+                            => try_unify_args f g; try_unify_args x y
+                          | ?y => fail 0 "Z.euclidean_division_equations_flags: try_unify_args: cannot unify application" x "with non-application" y
+                          end
+                     | ?x
+                       => (tryif has_evar x
+                            then fail 0 "Z.euclidean_division_equations_flags: try_unify_args: cannot unify evar-containing non-application" x "with" y
+                            else (tryif has_evar y
+                                   then fail 0 "Z.euclidean_division_equations_flags: try_unify_args: cannot unify non-application" x "with evar-containing" y
+                                   else fail 100 "Z.euclidean_division_equations_flags: try_unify_args: Impossible inconsistent state of has_evar in try_unify_args" x y))
+                     end))
+        else idtac.
+    End DefaultHelpers.
+
+    Ltac flags_with orig_flags proj value :=
+      let flags := open_constr:(match True return t with _ => ltac:(econstructor) end) in
+      let __unif := constr:(eq_refl : proj flags = value) in
+      let __force := lazymatch goal with _ => try_unify_args flags orig_flags end in
+      flags.
+
+    Ltac default_with proj value := flags_with default proj value.
+
+    Ltac guard_with proj flags tac :=
+      lazymatch (eval cbv in (proj flags)) with
+      | true => tac
+      | false => idtac
+      | ?v => let ctrue := constr:(true) in
+              let cfalse := constr:(false) in
+              fail 0 "Invalid flag value for" proj "in" flags "(got" v "expected" ctrue "or" cfalse ")"
+      end.
+  End euclidean_division_equations_flags.
+  Import euclidean_division_equations_flags (find_duplicate_quotients).
+  Ltac to_euclidean_division_equations_with flags :=
+    divide_to_equations'; div_mod_to_equations'; quot_rem_to_equations';
+    euclidean_division_equations_cleanup;
+    euclidean_division_equations_flags.guard_with find_duplicate_quotients flags euclidean_division_equations_find_duplicate_quotients.
+  Ltac to_euclidean_division_equations :=
+    to_euclidean_division_equations_with euclidean_division_equations_flags.default.
 End Z.
 
 Require Import ZifyClasses ZifyInst.

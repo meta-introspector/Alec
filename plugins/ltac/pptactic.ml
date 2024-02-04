@@ -191,8 +191,9 @@ let string_of_genarg_arg (ArgumentType arg) =
   let pr_and_short_name pr (c,_) = pr c
 
   let pr_evaluable_reference = function
-    | Tacred.EvalVarRef id -> pr_id id
-    | Tacred.EvalConstRef sp -> pr_global (GlobRef.ConstRef sp)
+    | Evaluable.EvalVarRef id -> pr_id id
+    | Evaluable.EvalConstRef sp -> pr_global (GlobRef.ConstRef sp)
+    | Evaluable.EvalProjectionRef p -> str "TODO projection" (* TODO *)
 
   let pr_quantified_hypothesis = function
     | AnonHyp n -> int n
@@ -361,7 +362,7 @@ let string_of_genarg_arg (ArgumentType arg) =
       match ty.CAst.v with
           Constrexpr.CProdN(bll,a) ->
             let bll = List.map (function
-            | CLocalAssum (nal,_,t) -> nal,t
+            | CLocalAssum (nal,_,_,t) -> nal,t
             | _ -> user_err Pp.(str "Cannot translate fix tactic: not only products")) bll in
             let nb = List.fold_left (fun i (nal,t) -> i + List.length nal) 0 bll in
             if nb >= n then (List.rev (bll@acc)), a
@@ -381,9 +382,11 @@ let string_of_genarg_arg (ArgumentType arg) =
         str "<" ++ KerName.print kn ++ str ">"
 
   let pr_evaluable_reference_env env = function
-    | Tacred.EvalVarRef id -> pr_id id
-    | Tacred.EvalConstRef sp ->
+    | Evaluable.EvalVarRef id -> pr_id id
+    | Evaluable.EvalConstRef sp ->
       Nametab.pr_global_env (Termops.vars_of_env env) (GlobRef.ConstRef sp)
+    | Evaluable.EvalProjectionRef p ->
+      str "TODO projection" (* TODO *)
 
   let pr_as_disjunctive_ipat prc ipatl =
     keyword "as" ++ spc () ++
@@ -522,19 +525,8 @@ let string_of_genarg_arg (ArgumentType arg) =
     | FullInversion -> primitive "inversion"
     | FullInversionClear -> primitive "inversion_clear"
 
-  let pr_range_selector (i, j) =
-    if Int.equal i j then int i
-    else int i ++ str "-" ++ int j
-
-let pr_goal_selector toplevel = let open Goal_select in function
-  | SelectAlreadyFocused -> str "!:"
-  | SelectNth i -> int i ++ str ":"
-  | SelectList l -> prlist_with_sep (fun () -> str ", ") pr_range_selector l ++ str ":"
-  | SelectId id -> str "[" ++ Id.print id ++ str "]:"
-  | SelectAll -> assert toplevel; str "all:"
-
 let pr_goal_selector ~toplevel s =
-  (if toplevel then mt () else str "only ") ++ pr_goal_selector toplevel s
+  (if toplevel then mt () else str "only ") ++ Goal_select.pr_goal_selector s ++ str ":"
 
   let pr_lazy = function
     | General -> keyword "multi"
@@ -1080,7 +1072,7 @@ let pr_goal_selector ~toplevel s =
     let rec strip_ty acc n ty =
       if Int.equal n 0 then (List.rev acc, (ty,None)) else
         match DAst.get ty with
-            Glob_term.GProd(na,Glob_term.Explicit,a,b) ->
+            Glob_term.GProd(na,_,Glob_term.Explicit,a,b) ->
               strip_ty (([CAst.make na],(a,None))::acc) (n-1) b
           | _ -> user_err Pp.(str "Cannot translate fix tactic: not enough products") in
     strip_ty [] n ty
@@ -1139,8 +1131,35 @@ let pr_goal_selector ~toplevel s =
         n t
     in
     prtac n t
+  
+  let pr_glob_tactic_level2 env n t =
+    let glob_printers =
+      (strip_prod_binders_glob_constr)
+    in
+    let rec prtac n (t:glob_tactic_expr) =
+      let pr = {
+        pr_tactic = prtac;
+        pr_constr = (fun env sigma -> pr_and_constr_expr (pr_glob_constr_env env sigma));
+        pr_dconstr = (fun env sigma -> pr_and_constr_expr (pr_glob_constr_env env sigma));
+        pr_lconstr = (fun env sigma -> pr_and_constr_expr (pr_lglob_constr_env env sigma));
+        pr_pattern = (fun env sigma -> pr_pat_and_constr_expr (pr_glob_constr_env env sigma));
+        pr_constant = pr_or_var (pr_and_short_name (pr_evaluable_reference_env env));
+        pr_lpattern = (fun env sigma -> pr_pat_and_constr_expr (pr_lglob_constr_env env sigma));
+        pr_reference = pr_ltac_or_var (pr_located pr_ltac_constant);
+        pr_name = pr_lident2;
+        pr_generic = Pputils.pr_glb_generic;
+        pr_extend = pr_glob_extend_rec prtac;
+        pr_alias = pr_glob_alias prtac;
+      } in
+      make_pr_tac env (Evd.from_env env)
+        pr glob_printers
+        tag_glob_atomic_tactic_expr tag_glob_tactic_expr
+        n t
+    in
+    str "DEBUGTAC"++ prtac n t
 
   let pr_glob_tactic env = pr_glob_tactic_level env ltop
+  let pr_glob_tactic2 env = pr_glob_tactic_level2 env ltop
 
   let strip_prod_binders_constr n ty =
     let ty = EConstr.Unsafe.to_constr ty in
@@ -1189,6 +1208,20 @@ let pr_goal_selector ~toplevel s =
     pr_extend_gen pr lev ml args
 
   let pr_atomic_tactic env sigma c = pr_atomic_tactic_level env sigma c
+
+let pp_ltac_call_kind = function
+  | LtacNotationCall s -> pr_alias_key s
+  | LtacNameCall cst -> pr_ltac_constant cst
+  (* todo: don't want the KerName instead? *)
+  | LtacVarCall (_, id, t) -> Names.Id.print id
+  | LtacAtomCall te ->
+    pr_glob_tactic (Global.env ())
+      (CAst.make (TacAtom te))
+  | LtacConstrInterp (env, sigma, c, _) ->
+    pr_glob_constr_env env sigma c
+  | LtacMLCall te ->
+    (pr_glob_tactic (Global.env ())
+       te)
 
 let declare_extra_genarg_pprule wit
   (f : 'a raw_extra_genarg_printer)

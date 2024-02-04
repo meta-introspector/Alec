@@ -72,16 +72,41 @@ let coq_unit_judge env sigma =
   | None -> sigma, unit_judge_fallback
 
 let unfold_projection env evd ts p r c =
-  let cst = Projection.constant p in
-    if TransparentState.is_transparent_constant ts cst then
-      Some (mkProj (Projection.unfold p, r, c))
-    else None
+  if TransparentState.is_transparent_projection ts (Projection.repr p) then
+    Some (mkProj (Projection.unfold p, r, c))
+  else None
+
+(* [unfold_projection_under_eta env evd ts n c] checks if [c] is the eta
+   expanded, folded primitive projection of name [n] and unfolds the primitive
+   projection. It respects projection transparency of [ts]. *)
+let unfold_projection_under_eta env evd ts n c =
+  let rec go c lams =
+    match EConstr.kind evd c with
+    | Lambda (b, t, c) -> go c ((b,t)::lams)
+    | Proj (p, r, c) when Names.Constant.CanOrd.equal n (Projection.constant p) ->
+      let c = unfold_projection env evd ts p r c in
+      begin
+        match c with
+        | None -> None
+        | Some c ->
+          let f c (b,t) = mkLambda (b,t,c) in
+          Some (List.fold_left f c lams)
+      end
+      | _ -> None
+  in
+  go c []
 
 let eval_flexible_term ts env evd c =
   match EConstr.kind evd c with
   | Const (c, u) ->
-      if TransparentState.is_transparent_constant ts c
-      then Option.map EConstr.of_constr (constant_opt_value_in env (c, EInstance.kind evd u))
+      if Structures.PrimitiveProjections.is_transparent_constant ts c then
+        let value = Option.map EConstr.of_constr (constant_opt_value_in env (c, EInstance.kind evd u)) in
+        (* If we are unfolding a compatibility constant we want to return the
+           unfolded primitive projection directly since we would like to pretend
+           that the compatibility constant itself does not count as an unfolding
+           (delta) step. *)
+        let unf = Option.bind value (unfold_projection_under_eta env evd ts c) in
+        if Option.has_some unf then unf else value
       else None
   | Rel n ->
       (try match lookup_rel n env with
@@ -170,9 +195,11 @@ let occur_rigidly flags env evd (evk,_) t =
     | Construct _ -> Normal false
     | Ind _ | Sort _ -> Rigid false
     | Proj (p, _, c) ->
-      let cst = Projection.constant p in
-      let rigid = not (TransparentState.is_transparent_constant flags.open_ts cst) in
-        if rigid then aux c
+       let rigid =
+         let p = Projection.repr p in
+         not (TransparentState.is_transparent_projection flags.open_ts p)
+       in
+       if rigid then aux c
         else (* if the evar appears rigidly in c then this elimination
                 cannot reduce and we have a rigid occurrence, otherwise
                 we don't know. *)
@@ -189,7 +216,7 @@ let occur_rigidly flags env evd (evk,_) t =
     | Lambda (na, t, b) -> aux b
     | LetIn (na, _, _, b) -> aux b
     | Const (c,_) ->
-      if TransparentState.is_transparent_constant flags.open_ts c then Reducible
+      if Structures.PrimitiveProjections.is_transparent_constant flags.open_ts c then Reducible
       else Rigid false
     | Prod (_, b, t) ->
       let b' = aux b and t' = aux t in
@@ -1387,7 +1414,7 @@ let apply_on_subterm env evd fixed f test c t =
   let t' = applyrec (env,(0,c)) t in
   !evdref, !fixedref, t'
 
-let filter_possible_projections evd c ty ctxt args =
+let filter_possible_projections evd i0 c ty ctxt args =
   (* Since args in the types will be replaced by holes, we count the
      fv of args to have a well-typed filter; don't know how necessary
     it is however to have a well-typed filter here *)
@@ -1402,7 +1429,7 @@ let filter_possible_projections evd c ty ctxt args =
     (match decl with
      | NamedDecl.LocalAssum _ -> false
      | NamedDecl.LocalDef (_,c,_) -> not (isRel evd c || isVar evd c)) ||
-    a == c ||
+    Int.equal i0 i (* check whether [c] is [args.(i)] *) ||
     (* Here we make an approximation, for instance, we could also be *)
     (* interested in finding a term u convertible to c such that a occurs *)
     (* in u *)
@@ -1487,8 +1514,8 @@ let second_order_matching flags env_rhs evd (evk,args) (test,argoccs) rhs =
   let sign = named_context_val env_evar in
   let ctxt = evar_filtered_context evi in
   debug_ho_unification (fun () ->
-     Pp.(str"env rhs: " ++ Termops.Internal.print_env env_rhs ++ fnl () ++
-         str"env evars: " ++ Termops.Internal.print_env env_evar));
+     Pp.(str"rhs env: " ++ Termops.Internal.print_env env_rhs evd ++ fnl () ++
+         str"evar env: " ++ Termops.Internal.print_env env_evar evd));
   let args = Evd.expand_existential evd (evk, args) in
   let args = List.map (nf_evar evd) args in
   let argsubst = List.map2 (fun decl c -> (NamedDecl.get_id decl, c)) ctxt args in
@@ -1498,13 +1525,13 @@ let second_order_matching flags env_rhs evd (evk,args) (test,argoccs) rhs =
       the solution we are trying to build here by adding the problem as a constraint. *)
   let evd = Evarutil.add_unification_pb (CONV,env_rhs,mkLEvar evd (evk, args),rhs) evd in
   let prc env evd c = Termops.Internal.print_constr_env env evd c in
-  let rec make_subst = function
+  let rec make_subst i = function
     | decl'::ctxt', c::l, occs::occsl when isVarId evd (NamedDecl.get_id decl') c ->
       begin match occs with
         | AtOccurrences loc when not (Locusops.is_all_occurrences loc) ->
           user_err Pp.(str "Cannot force abstraction on identity instance.")
         | _ ->
-          make_subst (ctxt',l,occsl)
+          make_subst (i + 1) (ctxt',l,occsl)
       end
     | decl'::ctxt', c::l, occs::occsl ->
       let id = NamedDecl.get_annot decl' in
@@ -1513,8 +1540,8 @@ let second_order_matching flags env_rhs evd (evk,args) (test,argoccs) rhs =
       let c = nf_evar evd c in
       (* ty is in env_rhs now *)
       let ty = replace_vars evd argsubst t in
-      let filter' = filter_possible_projections evd c (nf_evar evd ty) ctxt args in
-      (id,t,c,ty,evs,Filter.make filter',occs) :: make_subst (ctxt',l,occsl)
+      let filter' = filter_possible_projections evd i c (nf_evar evd ty) ctxt args in
+      (id,t,c,ty,evs,Filter.make filter',occs) :: make_subst (i + 1) (ctxt',l,occsl)
     | _, _, [] -> []
     | _ -> anomaly (Pp.str "Signature or instance are shorter than the occurrences list.")
   in
@@ -1567,7 +1594,7 @@ let second_order_matching flags env_rhs evd (evk,args) (test,argoccs) rhs =
      set_holes env_rhs' evd fixed rhs' subst
   | [] -> evd, fixed, rhs in
 
-  let subst = make_subst (ctxt,args,argoccs) in
+  let subst = make_subst 0 (ctxt,args,argoccs) in
 
   let evd, _, rhs' = set_holes env_rhs evd Evar.Set.empty rhs subst in
   let rhs' = nf_evar evd rhs' in

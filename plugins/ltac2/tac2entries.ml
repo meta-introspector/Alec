@@ -911,6 +911,7 @@ let register_redefinition qid old ({loc=eloc} as e) =
   Lib.add_leaf (inTac2Redefinition def)
 
 let perform_eval ~pstate e =
+
   let env = Global.env () in
   let (e, ty) = Tac2intern.intern ~strict:false [] e in
   let v = Tac2interp.interp Tac2interp.empty_environment e in
@@ -919,8 +920,10 @@ let perform_eval ~pstate e =
     | None ->
       let sigma = Evd.from_env env in
       let name, poly = Id.of_string "ltac2", false in
+      Feedback.msg_notice (str "DEBUG Goals") ;
       Goal_select.SelectAll, Proof.start ~name ~poly sigma []
     | Some pstate ->
+       Feedback.msg_notice (str "DEBUG_SOME_STATE") ;
       Goal_select.get_default_goal_selector (),
       Declare.Proof.get pstate
   in
@@ -1210,6 +1213,7 @@ let ltac2_interp e =
 let ComTactic.Interpreter ltac2_interp = ComTactic.register_tactic_interpreter "coq-core.plugins.ltac2" ltac2_interp
 
 let call ~pstate g ~with_end_tac tac =
+   Feedback.msg_notice (str "DEBUG_CALL") ;
   let g = Option.default (Goal_select.get_default_goal_selector()) g in
   ComTactic.solve ~pstate ~with_end_tac g ~info:None (ltac2_interp tac)
 

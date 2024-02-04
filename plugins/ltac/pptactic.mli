@@ -106,7 +106,7 @@ val pr_may_eval :
 
 val pr_and_short_name : ('a -> Pp.t) -> 'a Genredexpr.and_short_name -> Pp.t
 
-val pr_evaluable_reference_env : env -> Tacred.evaluable_global_reference -> Pp.t
+val pr_evaluable_reference_env : env -> Names.Evaluable.t -> Pp.t
 
 val pr_quantified_hypothesis : quantified_hypothesis -> Pp.t
 
@@ -142,6 +142,7 @@ val pr_raw_tactic : env -> Evd.evar_map -> raw_tactic_expr -> Pp.t
 val pr_raw_tactic_level : env -> Evd.evar_map -> entry_relative_level -> raw_tactic_expr -> Pp.t
 
 val pr_glob_tactic : env -> glob_tactic_expr -> Pp.t
+val pr_glob_tactic2 : env -> glob_tactic_expr -> Pp.t
 
 val pr_atomic_tactic : env -> Evd.evar_map -> atomic_tactic_expr -> Pp.t
 
@@ -156,6 +157,7 @@ val pr_match_rule : bool -> ('a -> Pp.t) -> ('b -> Pp.t) ->
 
 val pr_value : entry_relative_level -> Val.t -> Pp.t
 
+val pp_ltac_call_kind : ltac_call_kind -> Pp.t
 
 val ltop : entry_relative_level
 

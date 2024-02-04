@@ -279,7 +279,7 @@ constraint 'a = <
 
 type g_trm = Genintern.glob_constr_and_expr
 type g_pat = Genintern.glob_constr_pattern_and_expr
-type g_cst = Tacred.evaluable_global_reference Genredexpr.and_short_name or_var
+type g_cst = Evaluable.t Genredexpr.and_short_name or_var
 type g_ref = ltac_constant located or_var
 type g_nam = lident
 
@@ -333,7 +333,7 @@ type raw_tactic_arg =
 
 type t_trm = EConstr.constr
 type t_pat = constr_pattern
-type t_cst = Tacred.evaluable_global_reference
+type t_cst = Evaluable.t
 type t_ref = ltac_constant located
 type t_nam = Id.t
 
@@ -350,6 +350,11 @@ type t_dispatch =  <
 
 type atomic_tactic_expr =
     t_dispatch gen_atomic_tactic_expr
+
+(** Misc *)
+
+type raw_strategy = (constr_expr, Genredexpr.raw_red_expr, lident) Rewrite.strategy_ast
+type glob_strategy = (Genintern.glob_constr_and_expr, Genredexpr.glob_red_expr, Id.t) Rewrite.strategy_ast
 
 (** Traces *)
 

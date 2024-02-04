@@ -336,7 +336,31 @@ are now available through the dot notation.
    :cmd:`Print Module Type`.
 
 .. cmd:: Print Namespace @dirpath
-   :undocumented:
+
+   Prints the names and types of all loaded constants whose fully qualified
+   names start with :n:`@dirpath`. For example, the command ``Print Namespace Coq.``
+   displays the names and types of all loaded constants in the standard library.
+   The command ``Print Namespace Coq.Init`` only shows constants defined in one
+   of the files in the ``Init`` directory. The command ``Print Namespace
+   Coq.Init.Nat`` shows what is in the ``Nat`` library file inside the ``Init``
+   directory. Module names may appear in :n:`@dirpath`.
+
+   .. example::
+
+      .. coqtop:: reset in
+
+         Module A.
+         Definition foo := 0.
+         Module B.
+         Definition bar := 1.
+         End B.
+         End A.
+
+      .. coqtop:: all
+
+         Print Namespace Top.
+         Print Namespace Top.A.
+         Print Namespace Top.A.B.
 
 .. _module_examples:
 
@@ -941,7 +965,7 @@ with the logical name :n:`Top` and there is no associated file system path.
 
 If :n:`@qualid` is the fully qualified name of an item, Coq
 always interprets :n:`@qualid` as a reference to that item.  If :n:`@qualid` is also a
-partially qualified name for another item, then you must use provide a more-qualified
+partially qualified name for another item, then you must provide a more-qualified
 name to uniquely identify that other item.  For example, if there are two
 fully qualified items named `Foo.Bar` and `Coq.X.Foo.Bar`, then `Foo.Bar` refers
 to the first item and `X.Foo.Bar` is the shortest name for referring to the second item.

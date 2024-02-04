@@ -41,9 +41,9 @@ let chop_rlambda_n =
     if n == 0 then (List.rev acc, rt)
     else
       match DAst.get rt with
-      | Glob_term.GLambda (name, k, t, b) ->
+      | Glob_term.GLambda (name, _, k, t, b) ->
         chop_lambda_n ((name, t, None) :: acc) (n - 1) b
-      | Glob_term.GLetIn (name, v, t, b) ->
+      | Glob_term.GLetIn (name, _, v, t, b) ->
         chop_lambda_n ((name, v, t) :: acc) (n - 1) b
       | _ ->
         CErrors.user_err
@@ -56,7 +56,7 @@ let chop_rprod_n =
     if n == 0 then (List.rev acc, rt)
     else
       match DAst.get rt with
-      | Glob_term.GProd (name, k, t, b) ->
+      | Glob_term.GProd (name, _, k, t, b) ->
         chop_prod_n ((name, t) :: acc) (n - 1) b
       | _ ->
         CErrors.user_err
@@ -402,11 +402,10 @@ let make_eq () =
   with e when CErrors.noncritical e -> assert false
 
 let evaluable_of_global_reference r =
-  let open Tacred in
   (* Tacred.evaluable_of_global_reference (Global.env ()) *)
   match r with
-  | GlobRef.ConstRef sp -> EvalConstRef sp
-  | GlobRef.VarRef id -> EvalVarRef id
+  | GlobRef.ConstRef sp -> Evaluable.EvalConstRef sp
+  | GlobRef.VarRef id -> Evaluable.EvalVarRef id
   | _ -> assert false
 
 let list_rewrite (rev : bool) (eqs : (EConstr.constr * bool) list) =

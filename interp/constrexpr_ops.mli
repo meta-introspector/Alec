@@ -19,6 +19,7 @@ open Constrexpr
 val sort_name_expr_eq : sort_name_expr -> sort_name_expr -> bool
 val univ_level_expr_eq : univ_level_expr -> univ_level_expr -> bool
 val sort_expr_eq : sort_expr -> sort_expr -> bool
+val relevance_info_expr_eq : relevance_info_expr -> relevance_info_expr -> bool
 
 val explicitation_eq : explicitation -> explicitation -> bool
 (** Equality on [explicitation]. *)
@@ -123,8 +124,6 @@ val occur_var_constr_expr : Id.t -> constr_expr -> bool
 
 (** Return all (non-qualified) names treating binders as names *)
 val names_of_constr_expr : constr_expr -> Id.Set.t
-
-val split_at_annot : local_binder_expr list -> lident option -> local_binder_expr list * local_binder_expr list
 
 val ntn_loc : ?loc:Loc.t -> constr_notation_substitution -> notation -> (int * int) list
 val patntn_loc : ?loc:Loc.t -> cases_pattern_notation_substitution -> notation -> (int * int) list

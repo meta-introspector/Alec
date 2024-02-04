@@ -240,10 +240,6 @@ let check_metafile p =
 let write_coqbin oc =
   fprintf oc "%s\n"
     "COQBIN?=\n\
-    ifneq (,$(COQBIN))\n\
-    # add an ending /\n\
-    COQBIN:=$(COQBIN)/\n\
-    endif\n\
     COQMKFILE ?= \"$(COQBIN)coq_makefile\""
 
 let generate_conf_files oc p

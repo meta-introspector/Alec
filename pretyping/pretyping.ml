@@ -93,6 +93,9 @@ let search_guard ?loc env possible_indexes fixdefs =
     indexes
   else
     (* we now search recursively among all combinations *)
+    let combinations = List.combinations possible_indexes in
+    if List.is_empty combinations then
+      user_err ?loc (Pp.str "A fixpoint needs at least one parameter.");
     (try
        List.iter
          (fun l ->
@@ -109,7 +112,7 @@ let search_guard ?loc env possible_indexes fixdefs =
               let env = Environ.set_typing_flags flags env in
               check_fix env fix; raise (Found indexes)
             with TypeError _ -> ())
-         (List.combinations possible_indexes);
+          combinations;
        let errmsg = "Cannot guess decreasing argument of fix." in
          user_err ?loc (Pp.str errmsg)
      with Found indexes -> indexes)
@@ -594,11 +597,11 @@ let eval_pretyper self ~flags tycon env sigma t =
     self.pretype_app self (c, args) ?loc ~flags tycon env sigma
   | GProj (hd, args, c) ->
     self.pretype_proj self (hd, args, c) ?loc ~flags tycon env sigma
-  | GLambda (na, bk, t, c) ->
+  | GLambda (na, _, bk, t, c) ->
     self.pretype_lambda self (na, bk, t, c) ?loc ~flags tycon env sigma
-  | GProd (na, bk, t, c) ->
+  | GProd (na, _, bk, t, c) ->
     self.pretype_prod self (na, bk, t, c) ?loc ~flags tycon env sigma
-  | GLetIn (na, b, t, c) ->
+  | GLetIn (na, _, b, t, c) ->
     self.pretype_letin self (na, b, t, c) ?loc ~flags tycon env sigma
   | GCases (st, c, tm, cl) ->
     self.pretype_cases self (st, c, tm, cl) ?loc ~flags tycon env sigma
@@ -742,13 +745,13 @@ struct
     let hypnaming = if flags.program_mode then ProgramNaming vars else RenameExistingBut vars in
     let rec type_bl env sigma ctxt = function
       | [] -> sigma, ctxt
-      | (na,bk,None,ty)::bl ->
+      | (na,_,bk,None,ty)::bl ->
         let sigma, ty' = pretype_type empty_valcon env sigma ty in
         let rty' = ESorts.relevance_of_sort sigma ty'.utj_type in
         let dcl = LocalAssum (make_annot na rty', ty'.utj_val) in
         let dcl', env = push_rel ~hypnaming sigma dcl env in
         type_bl env sigma (Context.Rel.add dcl' ctxt) bl
-      | (na,bk,Some bd,ty)::bl ->
+      | (na,_,bk,Some bd,ty)::bl ->
         let sigma, ty' = pretype_type empty_valcon env sigma ty in
         let rty' = ESorts.relevance_of_sort sigma ty'.utj_type in
         let sigma, bd' = pretype (mk_tycon ty'.utj_val) env sigma bd in
@@ -813,7 +816,7 @@ struct
             Array.to_list (Array.mapi
                              (fun i annot -> match annot with
                              | Some n -> [n]
-                             | None -> List.map_i (fun i _ -> i) 0 ctxtv.(i))
+                             | None -> List.interval 0 (Context.Rel.nhyps ctxtv.(i) - 1))
            vn)
           in
           let fixdecls = (names,ftys,fdefs) in
@@ -1380,14 +1383,19 @@ let pretype_type self c ?loc ~flags valcon (env : GlobEnv.t) sigma = match DAst.
     in
     let sigma, tycon' = split_as_array !!env sigma tycon in
     let sigma, jty = eval_type_pretyper self ~flags tycon' env sigma ty in
-    let sigma, u = match u with
-    | Some u -> sigma, u
-    | None -> Evd.new_univ_level_variable UState.univ_flexible sigma
-    in
-    let sigma = Evd.set_leq_sort !!env sigma jty.utj_type (ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u))) in
     let sigma, jdef = eval_pretyper self ~flags (mk_tycon jty.utj_val) env sigma def in
     let pretype_elem = eval_pretyper self ~flags (mk_tycon jty.utj_val) env in
     let sigma, jt = Array.fold_left_map pretype_elem sigma t in
+    let sigma, u = match u with
+      | Some u -> sigma, u
+      | None -> Evd.new_univ_level_variable UState.univ_flexible sigma
+    in
+    let sigma = Evd.set_leq_sort !!env sigma
+        (* we retype because it may be an evar which has been defined, resulting in a lower sort
+           cf #18480 *)
+        (Retyping.get_sort_of !!env sigma jty.utj_val)
+        (ESorts.make (Sorts.sort_of_univ (Univ.Universe.make u)))
+    in
     let u = UVars.Instance.of_array ([||],[| u |]) in
     let ta = EConstr.of_constr @@ Typeops.type_of_array !!env u in
     let j = {
@@ -1531,7 +1539,7 @@ let path_convertible env sigma cl p q =
   let mkGRef ref          = DAst.make @@ Glob_term.GRef(ref,None) in
   let mkGVar id           = DAst.make @@ Glob_term.GVar(id) in
   let mkGApp(rt,rtl)      = DAst.make @@ Glob_term.GApp(rt,rtl) in
-  let mkGLambda(n,t,b)    = DAst.make @@ Glob_term.GLambda(n,Explicit,t,b) in
+  let mkGLambda(n,t,b)    = DAst.make @@ Glob_term.GLambda(n,None,Explicit,t,b) in
   let mkGSort u           = DAst.make @@ Glob_term.GSort u in
   let mkGHole ()          = DAst.make @@ Glob_term.GHole (GBinderType Anonymous) in
   let path_to_gterm p =

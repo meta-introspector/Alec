@@ -16,6 +16,7 @@ val pr_ast : ('a -> Pp.t) -> 'a CAst.t -> Pp.t
 (** Prints an object surrounded by its commented location *)
 
 val pr_lident : lident -> Pp.t
+val pr_lident2 : lident -> Pp.t
 val pr_lname : lname -> Pp.t
 val pr_or_var : ('a -> Pp.t) -> 'a Locus.or_var -> Pp.t
 val pr_or_by_notation : ('a -> Pp.t) -> 'a Constrexpr.or_by_notation -> Pp.t

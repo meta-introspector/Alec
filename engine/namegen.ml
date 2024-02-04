@@ -318,7 +318,7 @@ let visible_ids sigma (nenv, c) =
     (* except that Not_found is not fatal *)
     begin match Evd.expand_existential sigma ev with
     | args -> List.iter (visible_ids n) args
-    | exception Not_found when !Flags.in_debugger ->
+    | exception Not_found  ->
       SList.Skip.iter (visible_ids n) args
     end
   | _ -> EConstr.iter_with_binders sigma succ visible_ids n c

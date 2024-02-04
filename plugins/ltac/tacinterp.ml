@@ -42,6 +42,12 @@ open Proofview.Notations
 open Context.Named.Declaration
 open Ltac_pretype
 
+let do_profile trace ?count_call tac =
+  Profile_tactic.do_profile_gen (function
+      | (_, c) :: _ -> Some (Pptactic.pp_ltac_call_kind c)
+      | [] -> None)
+    trace ?count_call tac
+
 let ltac_trace_info = Tactic_debug.ltac_trace_info
 
 let has_type : type a. Val.t -> a typed_abstract_argument_type -> bool = fun v wit ->
@@ -134,11 +140,11 @@ let name_vfun appl vle =
 
 module TacStore = Geninterp.TacStore
 
-let f_avoid_ids : Id.Set.t TacStore.field = TacStore.field ()
+let f_avoid_ids : Id.Set.t TacStore.field = TacStore.field "f_avoid_ids"
 (* ids inherited from the call context (needed to get fresh ids) *)
-let f_debug : debug_info TacStore.field = TacStore.field ()
-let f_trace : ltac_trace TacStore.field = TacStore.field ()
-let f_loc : Loc.t TacStore.field = TacStore.field ()
+let f_debug : debug_info TacStore.field = TacStore.field "f_debug"
+let f_trace : ltac_trace TacStore.field = TacStore.field "f_trace"
+let f_loc : Loc.t TacStore.field = TacStore.field "f_loc"
 
 (* Signature for interpretation: val_interp and interpretation functions *)
 type interp_sign = Geninterp.interp_sign =
@@ -421,7 +427,7 @@ let interp_reference ist env sigma = function
 let try_interp_evaluable env (loc, id) =
   let v = Environ.lookup_named id env in
   match v with
-  | LocalDef _ -> EvalVarRef id
+  | LocalDef _ -> Evaluable.EvalVarRef id
   | _ -> error_not_evaluable (GlobRef.VarRef id)
 
 let interp_evaluable ist env sigma = function
@@ -431,7 +437,8 @@ let interp_evaluable ist env sigma = function
       try try_interp_evaluable env (loc, id)
       with Not_found as exn ->
         match r with
-        | EvalConstRef _ -> r
+        | Evaluable.EvalConstRef _ -> r
+        | Evaluable.EvalProjectionRef _ -> r
         | _ ->
           let _, info = Exninfo.capture exn in
           Nametab.error_global_not_found ~info (qualid_of_ident ?loc id)
@@ -758,6 +765,12 @@ let interp_red_expr ist env sigma = function
   | CbvNative o ->
     sigma , CbvNative (Option.map (interp_closed_typed_pattern_with_occurrences ist env sigma) o)
   | (Red |  Hnf | ExtraRedExpr _ as r) -> sigma , r
+
+let interp_strategy ist _env _sigma s =
+  let interp_redexpr r = fun env sigma -> interp_red_expr ist env sigma r in
+  let interp_constr c = (fst c, fun env sigma -> interp_open_constr ist env sigma c) in
+  let s = Rewrite.map_strategy interp_constr interp_redexpr (fun x -> x) s in
+  Rewrite.strategy_of_ast s
 
 let interp_may_eval f ist env sigma = function
   | ConstrEval (r,c) ->
@@ -1109,7 +1122,7 @@ and eval_tactic_ist ist tac : unit Proofview.tactic =
   | TacAtom t ->
       let call = LtacAtomCall t in
       let (stack, _) = push_trace(loc,call) ist in
-      Profile_ltac.do_profile stack
+      do_profile stack
         (catch_error_tac_loc loc stack (interp_atomic ist t))
   | TacFun _ | TacLetIn _ | TacMatchGoal _ | TacMatch _ -> interp_tactic ist tac
   | TacId [] -> Proofview.tclLIFT (db_breakpoint (curr_debug ist) [])
@@ -1142,7 +1155,7 @@ and eval_tactic_ist ist tac : unit Proofview.tactic =
   | TacAbstract (t,ido) ->
       let call = LtacMLCall tac in
       let (stack,_) = push_trace(None,call) ist in
-      Profile_ltac.do_profile stack
+      do_profile stack
         (catch_error_tac stack begin
       Proofview.Goal.enter begin fun gl -> Abstract.tclABSTRACT
         (Option.map (interp_ident ist (pf_env gl) (project gl)) ido) (interp_tactic ist t)
@@ -1264,7 +1277,7 @@ and interp_ltac_reference ?loc' mustbetac ist r : Val.t Ftactic.t =
          already in another global reference *)
       let ist = ensure_loc loc ist in
       let (stack, _) = trace in
-      Profile_ltac.do_profile stack ~count_call:false
+      do_profile stack ~count_call:false
         (catch_error_tac_loc (* loc for interpretation *) loc stack
            (val_interp ~appl ist (Tacenv.interp_ltac r)))
 
@@ -1339,7 +1352,7 @@ and interp_app loc ist fv largs : Val.t Ftactic.t =
                 ; extra = TacStore.set ist.extra f_trace trace
                 } in
               let (stack, _) = trace in
-              Profile_ltac.do_profile stack ~count_call:false
+              do_profile stack ~count_call:false
                 (catch_error_tac_loc loc stack (val_interp (ensure_loc loc ist) body)) >>= fun v ->
               Ftactic.return (name_vfun (push_appl appl largs) v)
             end
@@ -1392,7 +1405,7 @@ and tactic_of_value ist vle =
         extra = TacStore.set ist.extra f_trace (if !Flags.profile_ltac then ([],[]) else trace); } in
       let tac = name_if_glob appl (eval_tactic_ist ist t) in
       let (stack, _) = trace in
-      Profile_ltac.do_profile stack (catch_error_tac_loc loc stack tac)
+      do_profile stack (catch_error_tac_loc loc stack tac)
   | VFun (appl,(stack,_),loc,vmap,vars,_) ->
      let tactic_nm =
        match appl with

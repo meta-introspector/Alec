@@ -88,7 +88,7 @@ let v_cons = v_tuple "constructor" [|v_ind;Int|]
 
 (** kernel/univ *)
 let v_level_global = v_tuple "Level.Global.t" [|v_dp;String;Int|]
-let v_raw_level = v_sum "raw_level" 3 (* SProp, Prop, Set *)
+let v_raw_level = v_sum "raw_level" 1 (* Set *)
   [|(*Level*)[|v_level_global|]; (*Var*)[|Int|]|]
 let v_level = v_tuple "level" [|Int;v_raw_level|]
 let v_expr = v_tuple "levelexpr" [|v_level;Int|]
@@ -227,8 +227,10 @@ let v_oracle =
   v_tuple "oracle" [|
     v_map v_id v_conv_level;
     v_hmap v_cst v_conv_level;
+    v_hmap v_proj_repr v_conv_level;
     v_pred v_id;
     v_pred v_cst;
+    v_pred v_proj_repr;
   |]
 
 let v_template_arity =
@@ -263,11 +265,11 @@ let v_cb = v_tuple "constant_body"
     v_bool;
     v_typing_flags|]
 
-let v_nested = v_sum "nested" 0
-  [|[|v_ind|] (* NestedInd *);[|v_cst|] (* NestedPrimitive *)|]
+let v_recarg_type = v_sum "recarg_type" 0
+  [|[|v_ind|] (* Mrec *);[|v_cst|] (* NestedPrimitive *)|]
 
 let v_recarg = v_sum "recarg" 1 (* Norec *)
-  [|[|v_ind|] (* Mrec *);[|v_nested|] (* Nested *)|]
+  [|[|v_recarg_type|] (* Mrec *)|]
 
 let rec v_wfp = Sum ("wf_paths",0,
     [|[|Int;Int|]; (* Rtree.Param *)
@@ -334,7 +336,6 @@ let v_retro_action =
   v_sum "retro_action" 0 [|
     [|v_prim_ind; v_ind|];
     [|v_prim_type; v_cst|];
-    [|v_cst|];
   |]
 
 let v_retroknowledge =
@@ -382,33 +383,6 @@ let v_deps = Array (v_tuple "dep" [|v_dp;v_vodigest|])
 let v_compiled_lib =
   v_tuple "compiled" [|v_dp;v_module;v_context_set;v_deps|]
 
-(** Library objects *)
-
-let v_obj = Dyn
-
-let v_open_filter = Sum ("open_filter",1,[|[|v_pred String|]|])
-
-let rec v_aobjs = Sum("algebraic_objects", 0,
-  [| [|v_libobjs|];
-     [|v_mp;v_subst|]
-  |])
-and v_substobjs =
-  Tuple("*", [|List v_uid;v_aobjs|])
-and v_libobjt = Sum("Libobject.t",0,
-  [| [| v_id; v_substobjs |];
-     [| v_id; v_substobjs |];
-     [| v_aobjs |];
-     [| v_id; v_libobjs |];
-     [| List (v_pair v_open_filter v_mp)|];
-     [| v_obj |]
-  |])
-
-and v_libobjs = List v_libobjt
-
-let v_libraryobjs = Tuple ("library_objects",[|v_libobjs;v_libobjs|])
-
-let v_librarysyntaxobjs = Tuple ("library_syntax_objects",[|v_libobjs;v_libobjs|])
-
 (** STM objects *)
 
 let v_frozen = Tuple ("frozen", [|List (v_pair Int Dyn); Opt Dyn|])
@@ -436,17 +410,11 @@ let v_stm_seg = v_pair v_tasks v_counters
 
 (** Toplevel structures in a vo (see Cic.mli) *)
 
-let v_deprecation =
-  v_pair (Opt String) (Opt String)
-
-let v_library_info =
-  v_sum "library_info" 0 [|[|String|];[|v_deprecation|]|]
-
 let v_libsum =
-  Tuple ("summary", [|v_dp;v_deps;String;List v_library_info|])
+  Tuple ("summary", [|v_dp;v_deps;String;Any|])
 
 let v_lib =
-  Tuple ("library",[|v_compiled_lib;v_librarysyntaxobjs;v_libraryobjs|])
+  Tuple ("library",[|v_compiled_lib;Any;Any|])
 
 let v_delayed_universes =
   Sum ("delayed_universes", 0, [| [| v_unit |]; [| v_context_set |] |])

@@ -45,7 +45,7 @@ function project {
 project mathcomp "https://github.com/math-comp/math-comp" "master"
 # Contact @CohenCyril, @proux01 on github
 
-project mathcomp_1 "https://github.com/math-comp/math-comp" "mathcomp-1"
+project mathcomp_1 "https://github.com/math-comp/math-comp" "a526d8dc7956ce1c1bc88051d0656d35b76608a3"
 # Contact @CohenCyril, @proux01 on github
 
 project fourcolor "https://github.com/math-comp/fourcolor" "master"
@@ -57,9 +57,7 @@ project oddorder "https://github.com/math-comp/odd-order" "master"
 project mczify "https://github.com/math-comp/mczify" "master"
 # Contact @pi8027 on github
 
-project finmap "https://github.com/math-comp/finmap" "cea9f088c9cddea1173bc2f7c4c7ebda35081b60"
-# put back master when Analysis master moves to MathComp 2
-# project finmap "https://github.com/math-comp/finmap" "master"
+project finmap "https://github.com/math-comp/finmap" "master"
 # Contact @CohenCyril on github
 
 project bigenough "https://github.com/math-comp/bigenough" "master"
@@ -436,7 +434,7 @@ project sf "https://github.com/DeepSpec/sf" "master"
 ########################################################################
 # Coqtail
 ########################################################################
-project coqtail "https://github.com/whonore/Coqtail" "master"
+project coqtail "https://github.com/whonore/Coqtail" "main"
 # Contact @whonore on github
 
 ########################################################################
@@ -474,8 +472,10 @@ project mathcomp_word "https://github.com/jasmin-lang/coqword" "v2.2"
 ########################################################################
 # Jasmin
 ########################################################################
-project jasmin "https://github.com/jasmin-lang/jasmin" "main"
+project jasmin "https://github.com/jasmin-lang/jasmin" "504d05f25c561f117b3ee2a2b664f8b692130d6c"
 # Contact @vbgl, @bgregoir on github
+# go back to "main" and change dependency to MC 2 when
+# https://github.com/jasmin-lang/jasmin/pull/560 is merged
 
 ########################################################################
 # Lean Importer

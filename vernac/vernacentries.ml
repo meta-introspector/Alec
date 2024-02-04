@@ -284,12 +284,12 @@ let print_strategy r =
   let oracle = Environ.oracle (Global.env ()) in
   match r with
   | None ->
-    let fold key lvl (vacc, cacc) = match key with
-    | VarKey id -> ((GlobRef.VarRef id, lvl) :: vacc, cacc)
-    | ConstKey cst -> (vacc, (GlobRef.ConstRef cst, lvl) :: cacc)
-    | RelKey _ -> (vacc, cacc)
+    let fold key lvl (vacc, cacc, pacc) = match key with
+    | Evaluable.EvalVarRef id -> ((GlobRef.VarRef id, lvl) :: vacc, cacc, pacc)
+    | Evaluable.EvalConstRef cst -> (vacc, (GlobRef.ConstRef cst, lvl) :: cacc, pacc)
+    | Evaluable.EvalProjectionRef p -> (vacc, cacc, (GlobRef.ConstRef (Projection.Repr.constant p), lvl) :: pacc)
     in
-    let var_lvl, cst_lvl = fold_strategy fold oracle ([], []) in
+    let var_lvl, cst_lvl, prj_lvl = fold_strategy fold oracle ([], [], []) in
     let var_msg =
       if List.is_empty var_lvl then mt ()
       else str "Variable strategies" ++ fnl () ++
@@ -300,12 +300,17 @@ let print_strategy r =
       else str "Constant strategies" ++ fnl () ++
         hov 0 (prlist_with_sep fnl pr_strategy cst_lvl)
     in
-    var_msg ++ cst_msg
+    let prj_msg =
+      if List.is_empty prj_lvl then mt ()
+      else str "Projection strategies" ++ fnl () ++
+        hov 0 (prlist_with_sep fnl pr_strategy prj_lvl)
+    in
+    var_msg ++ cst_msg ++ prj_msg
   | Some r ->
     let r = Smartlocate.smart_global r in
     let key = let open GlobRef in match r with
-    | VarRef id -> VarKey id
-    | ConstRef cst -> ConstKey cst
+    | VarRef id -> Evaluable.EvalVarRef id
+    | ConstRef cst -> Evaluable.EvalConstRef cst
     | IndRef _ | ConstructRef _ -> user_err Pp.(str "The reference is not unfoldable.")
     in
     let lvl = get_strategy oracle key in
@@ -1369,22 +1374,19 @@ let vernac_end_segment ~pm ~proof ({v=id} as lid) =
   | _ -> assert false
 
 let vernac_end_segment lid =
-  Vernactypes.TypedVernac {
-    inprog = Use; outprog = Pop; inproof = UseOpt; outproof = No;
-    run = (fun ~pm ~proof ->
-        let () = vernac_end_segment ~pm ~proof lid in
-        (), ())
-  }
+  Vernactypes.typed_vernac Pop ReadOpt
+    (fun ~pm ~proof ->
+       let () = vernac_end_segment ~pm ~proof lid in
+       (), ())
 
 let vernac_begin_segment ~interactive f =
-  let inproof = Vernactypes.InProof.(if interactive then Reject else Ignore) in
-  let outprog = Vernactypes.OutProg.(if interactive then Push else No) in
-  Vernactypes.TypedVernac {
-    inprog = Ignore; outprog; inproof; outproof = No;
-    run = (fun ~pm ~proof ->
-        let () = f () in
-        (), ())
-  }
+  let open Vernactypes in
+  let proof = Proof.(if interactive then Reject else Ignore) in
+  let prog = Prog.(if interactive then Push else Ignore) in
+  typed_vernac prog proof
+    (fun ~pm ~proof ->
+       let () = f () in
+       (), ())
 
 (* Libraries *)
 
@@ -1496,7 +1498,7 @@ let vernac_existing_class id =
 (***********)
 (* Solving *)
 
-let command_focus = Proof.new_focus_kind ()
+let command_focus = Proof.new_focus_kind "command_focus"
 let focus_command_cond = Proof.no_cond command_focus
 
 let vernac_set_end_tac pstate tac =
@@ -1820,24 +1822,30 @@ let () =
     }
 
 let vernac_set_strategy ~local l =
-  let open Tacred in
   let local = Option.default false local in
   let glob_ref r =
     match smart_global r with
-      | GlobRef.ConstRef sp -> EvalConstRef sp
-      | GlobRef.VarRef id -> EvalVarRef id
+      | GlobRef.ConstRef sp -> Evaluable.EvalConstRef sp
+      | GlobRef.VarRef id -> Evaluable.EvalVarRef id
       | _ -> user_err Pp.(str
           "Cannot set an inductive type or a constructor as transparent.") in
   let l = List.map (fun (lev,ql) -> (lev,List.map glob_ref ql)) l in
   Redexpr.set_strategy local l
 
-let vernac_set_opacity ~local (v,l) =
-  let open Tacred in
+let vernac_set_opacity ~on_proj_constant ~local (v,l) =
   let local = Option.default true local in
   let glob_ref r =
     match smart_global r with
-      | GlobRef.ConstRef sp -> EvalConstRef sp
-      | GlobRef.VarRef id -> EvalVarRef id
+      | GlobRef.ConstRef sp ->
+          begin
+            match Structures.PrimitiveProjections.find_opt sp with
+            | None when on_proj_constant -> user_err Pp.(str
+                "Only compatibility constant opacity can be set this way.")
+            | None -> Evaluable.EvalConstRef sp
+            | Some _ when on_proj_constant -> Evaluable.EvalConstRef sp
+            | Some p -> Evaluable.EvalProjectionRef p
+          end
+      | GlobRef.VarRef id -> Evaluable.EvalVarRef id
       | _ -> user_err Pp.(str
           "Cannot set an inductive type or a constructor as transparent.") in
   let l = List.map glob_ref l in
@@ -1991,7 +1999,7 @@ let vernac_print ~pstate =
   | PrintCoercions -> Prettyp.print_coercions ()
   | PrintNotation (entry, ntnstr) -> Prettyp.print_notation env sigma entry ntnstr
   | PrintCoercionPaths (cls,clt) ->
-    Prettyp.print_path_between (cl_of_qualid cls) (cl_of_qualid clt)
+    Prettyp.print_coercion_paths (cl_of_qualid cls) (cl_of_qualid clt)
   | PrintCanonicalConversions qids ->
     let grefs = List.map Smartlocate.smart_global qids in
     Prettyp.print_canonical_projections env sigma grefs
@@ -2121,7 +2129,7 @@ let vernac_unfocused ~pstate =
 (* "{" focuses on the first goal, "n: {" focuses on the n-th goal
     "}" unfocuses, provided that the proof of the goal has been completed.
 *)
-let subproof_kind = Proof.new_focus_kind ()
+let subproof_kind = Proof.new_focus_kind "subproof"
 let subproof_cond = Proof.done_cond subproof_kind
 
 let vernac_subproof gln ~pstate =
@@ -2462,8 +2470,9 @@ let translate_pure_vernac ?loc ~atts v = let open Vernactypes in match v with
   | VernacGeneralizable gen ->
     vtdefault(fun () -> with_locality ~atts vernac_generalizable gen)
 
-  | VernacSetOpacity qidl ->
-    vtdefault(fun () -> with_locality ~atts vernac_set_opacity qidl)
+  | VernacSetOpacity (qidl, on_proj_constant) ->
+    vtdefault(fun () ->
+        with_locality ~atts (vernac_set_opacity ~on_proj_constant) qidl)
 
   | VernacSetStrategy l ->
     vtdefault(fun () -> with_locality ~atts vernac_set_strategy l)

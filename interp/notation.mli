@@ -276,7 +276,7 @@ type 'a notation_query_pattern_gen = {
 
 type notation_query_pattern = qualid notation_query_pattern_gen
 
-val toggle_notations : on:bool -> all:bool -> (glob_constr -> Pp.t) -> notation_query_pattern -> unit
+val toggle_notations : on:bool -> all:bool -> ?verbose:bool -> (glob_constr -> Pp.t) -> notation_query_pattern -> unit
 
 (** {6 Miscellaneous} *)
 
@@ -293,6 +293,11 @@ exception NotationAsReferenceError of notation_as_reference_error
     Raise NotationAsReferenceError if not resolvable as a global reference *)
 val interp_notation_as_global_reference : ?loc:Loc.t -> head:bool ->
       (GlobRef.t -> bool) -> notation_key -> delimiters option -> GlobRef.t
+
+(** Same together with the full notation *)
+val interp_notation_as_global_reference_expanded : ?loc:Loc.t -> head:bool ->
+      (GlobRef.t -> bool) -> notation_key -> delimiters option ->
+  (notation_entry * notation_key) * notation_key * notation_with_optional_scope * interpretation * GlobRef.t
 
 (** Declares and looks for scopes associated to arguments of a global ref *)
 val declare_arguments_scope :
@@ -370,7 +375,7 @@ val declare_entry_coercion : specific_notation -> notation_entry_level -> notati
   (** Add a coercion from some-entry to some-relative-entry *)
 
 type entry_coercion = (notation_with_optional_scope * notation) list
-val availability_of_entry_coercion : ?non_empty:bool -> notation_entry_relative_level -> notation_entry_level -> entry_coercion option
+val availability_of_entry_coercion : ?non_included:bool -> notation_entry_relative_level -> notation_entry_level -> entry_coercion option
   (** Return a coercion path from some-relative-entry to some-entry if there is one *)
 
 (** Special properties of entries *)

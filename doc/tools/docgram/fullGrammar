@@ -1063,8 +1063,8 @@ gallina_ext: [
 | "Export" OPT import_categories LIST1 filtered_import
 | "Include" module_type_inl LIST0 ext_module_expr
 | "Include" "Type" module_type_inl LIST0 ext_module_type
-| "Transparent" LIST1 smart_global
-| "Opaque" LIST1 smart_global
+| "Transparent" OPT "!" LIST1 smart_global
+| "Opaque" OPT "!" LIST1 smart_global
 | "Strategy" LIST1 [ strategy_level "[" LIST1 smart_global "]" ]
 | "Canonical" OPT "Structure" global OPT [ OPT univ_decl def_body ]
 | "Canonical" OPT "Structure" by_notation
@@ -1528,6 +1528,27 @@ binder_interp: [
 | "as" "name"
 | "as" "pattern"
 | "as" "strict" "pattern"
+]
+
+range_selector: [
+| natural "-" natural
+| natural
+]
+
+range_selector_or_nth: [
+| natural "-" natural OPT [ "," LIST1 range_selector SEP "," ]
+| natural OPT [ "," LIST1 range_selector SEP "," ]
+]
+
+goal_selector: [
+| range_selector_or_nth
+| test_bracket_ident "[" ident "]"
+]
+
+toplevel_selector: [
+| goal_selector ":"
+| "!" ":"
+| "all" ":"
 ]
 
 simple_tactic: [
@@ -2063,7 +2084,7 @@ ltac_expr3: [
 | "exactly_once" ltac_expr3
 | "abstract" ltac_expr2
 | "abstract" ltac_expr2 "using" ident
-| "only" selector ":" ltac_expr3
+| "only" goal_selector ":" ltac_expr3
 | ltac_expr2
 ]
 
@@ -2205,27 +2226,6 @@ tactic: [
 | ltac_expr5
 ]
 
-range_selector: [
-| natural "-" natural
-| natural
-]
-
-range_selector_or_nth: [
-| natural "-" natural OPT [ "," LIST1 range_selector SEP "," ]
-| natural OPT [ "," LIST1 range_selector SEP "," ]
-]
-
-selector: [
-| range_selector_or_nth
-| test_bracket_ident "[" ident "]"
-]
-
-toplevel_selector: [
-| selector ":"
-| "!" ":"
-| "all" ":"
-]
-
 tactic_mode: [
 | OPT toplevel_selector G_vernac.query_command
 | OPT toplevel_selector "{"
@@ -2278,7 +2278,12 @@ glob_constr_with_bindings: [
 ]
 
 rewstrategy: [
-| rewstrategy ";" rewstrategy1
+| "fix" identref ":=" rewstrategy1
+| ne_rewstrategy1_list_sep_semicolon
+]
+
+ne_rewstrategy1_list_sep_semicolon: [
+| ne_rewstrategy1_list_sep_semicolon ";" rewstrategy1
 | rewstrategy1
 ]
 
@@ -2662,7 +2667,7 @@ tac2pat1: [
 | Prim.qualid      (* ltac2 plugin *)
 | tac2pat0 "::" tac2pat0      (* ltac2 plugin *)
 | tac2pat0 "|" LIST1 tac2pat1 SEP "|"      (* ltac2 plugin *)
-| tac2pat0 "as" lident      (* ltac2 plugin *)
+| tac2pat0 "as" identref      (* ltac2 plugin *)
 | tac2pat0      (* ltac2 plugin *)
 ]
 
@@ -2727,7 +2732,7 @@ ltac2_expr0: [
 | list_literal      (* ltac2 plugin *)
 | "{" test_qualid_with_or_lpar_or_rbrac ltac2_expr0 "with" tac2rec_fieldexprs "}"      (* ltac2 plugin *)
 | "{" tac2rec_fieldexprs "}"      (* ltac2 plugin *)
-| G_LTAC2_tactic_atom      (* ltac2 plugin *)
+| ltac2_atom      (* ltac2 plugin *)
 ]
 
 array_literal: [
@@ -2762,30 +2767,25 @@ ltac2_typevar: [
 | "'" Prim.ident      (* ltac2 plugin *)
 ]
 
-G_LTAC2_tactic_atom: [
+ltac2_atom: [
 | Prim.integer      (* ltac2 plugin *)
 | Prim.string      (* ltac2 plugin *)
 | Prim.qualid      (* ltac2 plugin *)
 | "@" Prim.ident      (* ltac2 plugin *)
-| "&" lident      (* ltac2 plugin *)
+| "&" identref      (* ltac2 plugin *)
 | "'" Constr.constr      (* ltac2 plugin *)
 | "constr" ":" "(" Constr.lconstr ")"      (* ltac2 plugin *)
 | "open_constr" ":" "(" Constr.lconstr ")"      (* ltac2 plugin *)
 | "preterm" ":" "(" Constr.lconstr ")"      (* ltac2 plugin *)
-| "ident" ":" "(" lident ")"      (* ltac2 plugin *)
+| "ident" ":" "(" identref ")"      (* ltac2 plugin *)
 | "pat" ":" "(" Constr.cpattern ")"      (* ltac2 plugin *)
 | "reference" ":" "(" globref ")"      (* ltac2 plugin *)
-| "ltac1" ":" "(" ltac1_expr_in_env ")"      (* ltac2 plugin *)
-| "ltac1val" ":" "(" ltac1_expr_in_env ")"      (* ltac2 plugin *)
-]
-
-ltac1_expr_in_env: [
-| test_ltac1_env LIST0 locident "|-" ltac_expr5      (* ltac2 plugin *)
-| ltac_expr5      (* ltac2 plugin *)
+| "ltac1" ":" "(" ltac1_expr_in_env ")"      (* ltac2_ltac1 plugin *)
+| "ltac1val" ":" "(" ltac1_expr_in_env ")"      (* ltac2_ltac1 plugin *)
 ]
 
 tac2expr_in_env: [
-| test_ltac1_env LIST0 locident "|-" ltac2_expr6      (* ltac2 plugin *)
+| test_ltac1_env LIST0 identref "|-" ltac2_expr6      (* ltac2 plugin *)
 | ltac2_expr6      (* ltac2 plugin *)
 ]
 
@@ -2824,10 +2824,6 @@ ltac2_type0: [
 | Prim.qualid      (* ltac2 plugin *)
 ]
 
-locident: [
-| Prim.ident      (* ltac2 plugin *)
-]
-
 G_LTAC2_binder: [
 | "_"      (* ltac2 plugin *)
 | Prim.ident      (* ltac2 plugin *)
@@ -2846,7 +2842,7 @@ tac2def_val: [
 ]
 
 tac2def_mut: [
-| "Set" Prim.qualid OPT [ "as" locident ] ":=" ltac2_expr6      (* ltac2 plugin *)
+| "Set" Prim.qualid OPT [ "as" identref ] ":=" ltac2_expr6      (* ltac2 plugin *)
 ]
 
 tac2typ_knd: [
@@ -2920,7 +2916,7 @@ tac2def_typ: [
 ]
 
 tac2def_ext: [
-| "@" "external" locident ":" ltac2_type5 ":=" Prim.string Prim.string      (* ltac2 plugin *)
+| "@" "external" identref ":" ltac2_type5 ":=" Prim.string Prim.string      (* ltac2 plugin *)
 ]
 
 syn_node: [
@@ -2944,10 +2940,6 @@ tac2def_syn: [
 | LIST1 ltac2_scope syn_level ":=" ltac2_expr6      (* ltac2 plugin *)
 ]
 
-lident: [
-| Prim.ident      (* ltac2 plugin *)
-]
-
 globref: [
 | "&" Prim.ident      (* ltac2 plugin *)
 | Prim.qualid      (* ltac2 plugin *)
@@ -2958,7 +2950,7 @@ anti: [
 ]
 
 ident_or_anti: [
-| lident      (* ltac2 plugin *)
+| identref      (* ltac2 plugin *)
 | "$" Prim.ident      (* ltac2 plugin *)
 ]
 
@@ -2973,7 +2965,7 @@ q_ident: [
 qhyp: [
 | anti      (* ltac2 plugin *)
 | lnatural      (* ltac2 plugin *)
-| lident      (* ltac2 plugin *)
+| identref      (* ltac2 plugin *)
 ]
 
 G_LTAC2_simple_binding: [
@@ -3012,8 +3004,8 @@ G_LTAC2_equality_intropattern: [
 ]
 
 G_LTAC2_naming_intropattern: [
-| LEFTQMARK lident      (* ltac2 plugin *)
-| "?$" lident      (* ltac2 plugin *)
+| LEFTQMARK identref      (* ltac2 plugin *)
+| "?$" identref      (* ltac2 plugin *)
 | "?"      (* ltac2 plugin *)
 | ident_or_anti      (* ltac2 plugin *)
 ]
@@ -3064,7 +3056,7 @@ G_LTAC2_constr_with_bindings: [
 
 G_LTAC2_destruction_arg: [
 | lnatural      (* ltac2 plugin *)
-| lident      (* ltac2 plugin *)
+| identref      (* ltac2 plugin *)
 | G_LTAC2_constr_with_bindings      (* ltac2 plugin *)
 ]
 
@@ -3330,9 +3322,23 @@ ltac2_expr: [
 | _ltac2_expr      (* ltac2 plugin *)
 ]
 
+ltac2_selector: [
+| toplevel_selector      (* ltac2 plugin *)
+]
+
+ltac2_use_default: [
+| "."      (* ltac2 plugin *)
+| "..."      (* ltac2 plugin *)
+]
+
 tac2mode: [
-| OPT ltac_selector ltac2_expr6 ltac_use_default      (* ltac2 plugin *)
-| "par" ":" ltac2_expr6 ltac_use_default      (* ltac2 plugin *)
+| OPT ltac2_selector ltac2_expr6 ltac2_use_default      (* ltac2 plugin *)
+| "par" ":" ltac2_expr6 ltac2_use_default      (* ltac2 plugin *)
 | G_vernac.query_command      (* ltac2 plugin *)
+]
+
+ltac1_expr_in_env: [
+| test_ltac1_env LIST0 identref "|-" ltac_expr5      (* ltac2_ltac1 plugin *)
+| ltac_expr5      (* ltac2_ltac1 plugin *)
 ]
 

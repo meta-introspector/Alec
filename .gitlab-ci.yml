@@ -36,8 +36,8 @@ variables:
   # The $hash is the first 10 characters of the md5 of the Dockerfile. e.g.
   # echo $(md5sum dev/ci/docker/old_ubuntu_lts/Dockerfile | head -c 10)
   # echo $(md5sum dev/ci/docker/edge_ubuntu/Dockerfile | head -c 10)
-  BASE_CACHEKEY: "old_ubuntu_lts-V2023-06-30-8ca33f9dfd"
-  EDGE_CACHEKEY: "edge_ubuntu-V2023-11-30-ba911a5fa6"
+  BASE_CACHEKEY: "old_ubuntu_lts-V2024-01-08-011994e15c"
+  EDGE_CACHEKEY: "edge_ubuntu-V2024-01-08-6b5ac95a11"
   BASE_IMAGE: "$CI_REGISTRY_IMAGE:$BASE_CACHEKEY"
   EDGE_IMAGE: "$CI_REGISTRY_IMAGE:$EDGE_CACHEKEY"
 
@@ -148,7 +148,7 @@ before_script:
     - cd test-suite
     - make clean
     - export OCAMLPATH=$(readlink -f ../_install_ci/lib/):"$OCAMLPATH"
-    - COQEXTRAFLAGS="${COQEXTRAFLAGS}" make -j "$NJOBS" all
+    - COQEXTRAFLAGS="${COQEXTRAFLAGS}" make -j "$NJOBS" TIMED=1 all
   artifacts:
     name: "$CI_JOB_NAME.logs"
     when: on_failure
@@ -750,19 +750,19 @@ library:ci-finmap:
   extends: .ci-template-flambda
   needs:
   - build:edge+flambda
-  - library:ci-mathcomp_1
+  - library:ci-mathcomp
 
 library:ci-bigenough:
   extends: .ci-template-flambda
   needs:
   - build:edge+flambda
-  - library:ci-mathcomp_1
+  - library:ci-mathcomp
 
 library:ci-analysis:
   extends: .ci-template-flambda
   needs:
   - build:edge+flambda
-  - library:ci-mathcomp_1
+  - library:ci-mathcomp
   - library:ci-finmap
   - library:ci-bigenough
   - plugin:ci-elpi_hb  # for Hierarchy Builder
@@ -824,7 +824,6 @@ library:ci-jasmin:
   - build:edge+flambda
   - library:ci-mathcomp_1
   - library:ci-mathcomp_word
-  allow_failure: true # Forgot to ran CI before merging https://github.com/coq/coq/pull/18374
 
 library:ci-coq_library_undecidability:
   extends: .ci-template

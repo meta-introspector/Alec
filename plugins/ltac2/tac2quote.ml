@@ -24,8 +24,6 @@ let wit_ident = Arg.create "ident"
 let wit_constr = Arg.create "constr"
 let wit_open_constr = Arg.create "open_constr"
 let wit_preterm = Arg.create "preterm"
-let wit_ltac1 = Arg.create "ltac1"
-let wit_ltac1val = Arg.create "ltac1val"
 
 (** Syntactic quoting of expressions. *)
 
@@ -134,9 +132,11 @@ let rec of_list ?loc f = function
 | e :: l ->
   constructor ?loc (coq_core "::") [f e; of_list ?loc f l]
 
-let array_of_list ?loc l =
-  let of_list = global_ref ?loc (kername array_prefix "of_list")  in
-  CAst.make ?loc @@ CTacApp (of_list, [l])
+let array_literal ?loc a =
+  if CList.is_empty a then global_ref ?loc (kername array_prefix "empty")
+  else
+    let of_list_kn = global_ref ?loc (kername array_prefix "of_list")  in
+    CAst.make ?loc @@ CTacApp (of_list_kn, [of_list ?loc (fun x -> x) a])
 
 let of_qhyp {loc;v=h} = match h with
 | QAnonHyp n -> std_constructor ?loc "AnonHyp" [of_int n]

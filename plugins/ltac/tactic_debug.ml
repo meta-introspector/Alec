@@ -15,11 +15,15 @@ open Names
 open Pp
 open Tacexpr
 
-let (ltac_trace_info : ltac_stack Exninfo.t) = Exninfo.make ()
+let (ltac_trace_info : ltac_stack Exninfo.t) = Exninfo.make "ltac_trace"
 
 let prtac x =
   let env = Global.env () in
   Pptactic.pr_glob_tactic env x
+
+let prtac2 x =
+  let env = Global.env () in
+  Pptactic.pr_glob_tactic2 env x
 
 (* This module intends to be a beginning of debugger for tactic expressions.
    Currently, it is quite simple and we can hope to have, in the future, a more
@@ -316,9 +320,10 @@ let defer_output = Comm.defer_output
 
 let db_pr_goal gl =
   let env = Proofview.Goal.env gl in
+  let sigma = Tacmach.project gl in
   let concl = Proofview.Goal.concl gl in
-  let penv = Termops.Internal.print_named_context env in
-  let pc = Printer.pr_econstr_env env (Tacmach.project gl) concl in
+  let penv = Termops.Internal.print_named_context env sigma in
+  let pc = Printer.pr_econstr_env env sigma concl in
     str"  " ++ hv 0 (penv ++ fnl () ++
                    str "============================" ++ fnl ()  ++
                    str" "  ++ pc) ++ fnl () ++ fnl ()
@@ -447,7 +452,7 @@ let goal_com tac varmap trace =
   Proofview.tclTHEN
     db_pr_goal
     (if Comm.isTerminal () || debugger_state.cur_loc = None then
-      (Proofview.tclLIFT (Comm.output (str "Going to execute:" ++ fnl () ++ prtac tac)))
+      (Proofview.tclLIFT (Comm.output (str "DEBUG:Going to execute:" ++ fnl () ++ str "PTR"++ prtac2 tac)))
     else
       Proofview.tclLIFT (Proofview.NonLogical.return ()))
 
@@ -688,7 +693,10 @@ let db_constr debug env sigma c =
   let open Proofview.NonLogical in
   is_debug debug >>= fun db ->
   if db then
-    Comm.defer_output (fun () -> str "Evaluated term: " ++ Printer.pr_econstr_env env sigma c)
+    Comm.defer_output (fun () ->
+        str "DEBUG LTAC Evaluated term: " ++ Printer.pr_econstr_env env sigma c
+        (*++ debugger_state.cur_locTODO *)
+      )
   else return ()
 
 let is_breakpoint brkname s = match brkname, s with

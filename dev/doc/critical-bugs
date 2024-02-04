@@ -151,8 +151,6 @@ Module system
   GH issue number: #4294
   risk: ?
 
-Module system
-
   component: modules, universes
   summary: universe constraints for module subtyping not stored in vo files
   introduced: presumably 8.2 (b3d3b56)
@@ -186,6 +184,17 @@ Module system
   GH issue number: #7615
   exploit: see issue
   risk: medium
+
+  component: modules, primitive types
+  summary: Primitives are incorrectly considered convertible to anything by module subtyping
+  introduced: 8.11
+  impacted released versions: V8.11.0-V8.18.0
+  impacted coqchk versions: same
+  fixed in: V8.19.0
+  found by: Gaëtan Gilbert
+  GH issue number: #18503
+  exploit: see issue
+  risk: high if there is a Primitive in a Module Type, otherwise low
 
 Universes
 
@@ -610,6 +619,19 @@ Conflicts with axioms in library
   found by: Jason Gross
   GH issue number: #17871
   risk: proof of false when using primitive floats and native_compute
+
+Deserialization
+
+  component: coqchk (coqc trusts that .vo files are well formed)
+  summary: deserialization of .vo data not properly checked
+  introduced: 8.16 (univ levels), 8.10 (retroknowledge)
+  impacted released versions: 8.10-8.18.1
+  impacted coqchk versions: same
+  fixed in: 8.19
+  found by: Mario Carneiro
+  GH issue number: N/A (fix pull requests: #18403, #18406)
+  risk: can lead to segfaults or arbitrary code execution on crafted .vo files
+    (files produced by coqc are fine)
 
 There were otherwise several bugs in beta-releases, from memory, bugs with beta versions of primitive projections or template polymorphism or native compilation or guard (e7fc96366, 2a4d714a1).
 

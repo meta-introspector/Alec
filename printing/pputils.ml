@@ -46,6 +46,14 @@ let pr_lident { CAst.loc; v=id } =
     pr_located print
       (Some (Loc.make_loc (b,b + String.length (to_string id))), id)
 
+let pr_lident2 { CAst.loc; v=id } =
+  let open Names.Id in
+  match loc with
+  | None     -> print  id 
+  | Some loc -> let (b,_) = Loc.unloc loc in
+    pr_located print 
+      (Some (Loc.make_loc (b,b + String.length (to_string id))), id)
+
 let pr_lname = let open Names in function
   | {CAst.loc; v=Name id} -> pr_lident CAst.(make ?loc id)
   | x -> pr_ast Name.print x
